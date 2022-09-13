@@ -33,7 +33,8 @@ android_app {
         "androidx.recyclerview_recyclerview",
     ],
     required: [
-        "com.android.deskclock_allowlist"
+        "com.android.deskclock_allowlist",
+        "com.android.deskclock_default-permissions"
     ],
 }
 
@@ -42,5 +43,13 @@ prebuilt_etc {
     product_specific: true,
     sub_dir: "sysconfig",
     src: "com.android.deskclock_allowlist.xml",
+    filename_from_src: true,
+}
+
+prebuilt_etc {
+    name: "com.android.deskclock_default-permissions",
+    product_specific: true,
+    sub_dir: "default-permissions",
+    src: "com.android.deskclock_default-permissions.xml",
     filename_from_src: true,
 }
