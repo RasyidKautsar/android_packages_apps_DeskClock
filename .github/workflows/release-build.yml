@@ -33,7 +33,7 @@ jobs:
           java-version: 17
       - uses: gradle/gradle-build-action@v2
       - name: Build release APK
-        run: ./gradlew assembleDeskClockRelease
+        run: ./gradle assembleDeskClockRelease
       - name: Sign release APK
         uses: r0adkll/sign-android-release@v1
         id: sign-release-apk
