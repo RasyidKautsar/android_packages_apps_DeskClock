@@ -1,26 +1,35 @@
-name: Release update
+name: Build debug APK
+
 on:
   workflow_dispatch:
-    inputs:
-      artifactName:
-        description: Artifact name
-        type: string
-        required: true
-      tagName:
-        description: Tag name
-        type: string
-        required: true
-      prerelease:
-        description: Prerelease
-        type: boolean
-        required: true
-      releaseName:
-        description: Release name
-        type: string
-        required: true
+  workflow_call:
+  push:
+    branches:
+      - '*-dev'
+    paths-ignore:
+      - '.idea/**'
+      - '.gitattributes'
+      - '.github/**.json'
+      - '.gitignore'
+      - '.gitmodules'
+      - '**.md'
+      - 'LICENSE'
+      - 'NOTICE'
+  pull_request:
+    paths-ignore:
+      - '.idea/**'
+      - '.gitattributes'
+      - '.github/**.json'
+      - '.gitignore'
+      - '.gitmodules'
+      - '**.md'
+      - 'LICENSE'
+      - 'NOTICE'
+
 jobs:
-  build-release-apk:
+  build-debug-apk:
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -32,70 +41,54 @@ jobs:
           distribution: 'zulu'
           java-version: 17
       - uses: gradle/gradle-build-action@v2
-      - name: Build release APK
-        run: ./gradle assembleDeskClockRelease
-      - name: Sign release APK
-        uses: r0adkll/sign-android-release@v1
-        id: sign-release-apk
-        with:
-          releaseDirectory: build/outputs/apk/DeskClock/release
-          signingKeyBase64: ${{ secrets.KEYSTORE }}
-          alias: ${{ secrets.KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
-      - name: Rename artifact
-        continue-on-error: true
-        run: mv "${{ steps.sign-release-apk.outputs.signedReleaseFile }}" "${{ github.event.inputs.artifactName }}"
+      - name: Write sign info
+        if: github.repository == 'RasyidKautsar/android_packages_apps_DeskClock'
+        run: |
+          if [ ! -z "${{ secrets.KEYSTORE }}" ]; then
+            echo storePassword='${{ secrets.KEYSTORE_PASSWORD }}' >> keystore.properties
+            echo keyAlias='${{ secrets.KEY_ALIAS }}' >> keystore.properties
+            echo keyPassword='${{ secrets.KEY_PASSWORD }}' >> keystore.properties
+            echo storeFile='${{ github.workspace }}/key.jks' >> keystore.properties
+            echo ${{ secrets.KEYSTORE }} | base64 --decode > ${{ github.workspace }}/key.jks
+          fi
+      - name: Build debug APK
+        run: ./gradlew assembleLawnWithQuickstepDebug
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
-          name: Release APK
-          path: ${{ github.event.inputs.artifactName }}
-  publish-github-release:
+          name: Debug APK
+          path: build/outputs/apk/lawnWithQuickstep/debug/*.apk
+
+  send-notifications:
     runs-on: ubuntu-latest
-    needs: build-release-apk
-    permissions:
-      contents: write
+    if: github.repository == 'RasyidKautsar/android_packages_apps_DeskClock'
+    needs: build-debug-apk
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
-      - name: Download artifact
-        uses: actions/download-artifact@v3
         with:
-          name: Release APK
-          path: artifacts/release-apk
-      - name: Publish GitHub release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ github.event.inputs.tagName }}
-          prerelease: ${{ github.events.inputs.prerelease }}
-          draft: true
-          body_path: ${{ github.workspace }}/GITHUB_CHANGELOG.md
-          files: artifacts/release-apk/${{ github.event.inputs.artifactName }}
-          name: ${{ github.event.inputs.releaseName }}
-  publish-telegram-update-post:
-    runs-on: ubuntu-latest
-    needs: build-release-apk
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v3
-      - name: Download artifact
-        uses: actions/download-artifact@v3
-        with:
-          name: Release APK
-          path: artifacts/release-apk
+          submodules: true
+          fetch-depth: 0
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: 3.x
+          python-version: '3.x'
       - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
           pip install gitpython requests
-      - name: Publish Telegram update post
+      - name: Download artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: Debug APK
+          path: artifacts/debug-apk
+      - name: Send notifications
         run: python ci.py
         env:
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_CI_BOT_TOKEN }}
-          ARTIFACT_DIRECTORY: artifacts/release-apk
-          TELEGRAM_NEWS_CHANNEL_ID: ${{ secrets.TELEGRAM_NEWS_CHANNEL_ID }}
-          ACTION: update_announcement
+          TELEGRAM_CI_CHANNEL_ID: ${{ secrets.TELEGRAM_CI_CHANNEL_ID }}
+          TELEGRAM_TEAM_GROUP_ID: ${{ secrets.NOTIFY_CHANNEL_ID }}
+          ARTIFACT_DIRECTORY: artifacts/debug-apk
+          GITHUB_REF: ${{ github.ref }}
+          ACTION: internal_notifications
